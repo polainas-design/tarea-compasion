@@ -1,0 +1,5 @@
+datos_salida/
+*.csv
+__pycache__/
+*.pyc
+tarea_compasion-env/
