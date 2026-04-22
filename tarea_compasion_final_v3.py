@@ -1,13 +1,9 @@
-# -*- coding: utf-8 -*-
-# Forzar salida ASCII para compatibilidad con el IDE de PsychoPy en Windows
 import sys, io
 if hasattr(sys.stdout, 'buffer'):  
     sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='ascii', errors='replace')
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='ascii', errors='replace')
 
 from psychopy import prefs
-
-# --- CONFIGURACIÓN DE BACKENDS (DEBE ir ANTES de importar visual/core) ---
 prefs.hardware['audioLib'] = ['PTB']
 prefs.hardware['audioLatencyMode'] = 3  # Modo de baja latencia
 
@@ -19,7 +15,7 @@ import serial
 import serial.tools.list_ports
 from datetime import datetime
 
-# --- LSL para marcadores EEG (ANT Neuro) ---
+# para ANT - NEURO
 try:
     from pylsl import StreamInfo, StreamOutlet
     LSL_DISPONIBLE = True
@@ -27,23 +23,21 @@ except ImportError:
     print("AVISO: pylsl no instalado. Marcadores LSL desactivados.")
     LSL_DISPONIBLE = False
 
-# ==============================================================================
-# 1. CONFIGURACIÓN
-# ==============================================================================
+# CONFIGURACIÓN
 RUTA_FIJA = r'C:\Users\p_ull\OneDrive\Documentos\all_data_tarea_experimento\experimento_UMCE'
 NOMBRE_CARPETA_VIDEOS = 'stimuli_video_mp4'
 CARPETA_SALIDA = os.path.join(RUTA_FIJA, 'datos_salida')
 
-# --- TIEMPOS (SEGUNDOS) ---
+# TIEMPOS EN SEG
 TIEMPO_FIJACION = 5.0
 TIEMPO_CONTEXTO = 10.0
 TIEMPO_VIDEO = 10.0
 TIEMPO_RATING = 6.0
 
-# --- VIDEO ---
+# SIZE VIDEO
 VIDEO_SIZE = (960, 720)
 
-# --- ENTRENAMIENTO ---
+# ENTRENAMIENTO
 TRIALS_ENTRENAMIENTO = 2
 
 # --- MARCADORES LSL (ANT Neuro EEG) ---
@@ -52,11 +46,11 @@ LSL_CONTEXTO = 2
 LSL_VIDEO = 3
 LSL_RATING = 4
 
-# --- ARDUINO ---
+# ARDUINO
 ARDUINO_BAUDRATE = 115200
 ARDUINO_PORT = None  # None = autodetectar
 
-# --- PSYCHOPY LOGGING ---
+# PSYCHOPY
 logging.console.setLevel(logging.WARNING)
 
 try:
@@ -67,7 +61,7 @@ except FileNotFoundError:
 
 os.makedirs(CARPETA_SALIDA, exist_ok=True)
 
-# --- Diálogo inicial: Participante, Sesión y Grupo (A/B) ---
+# VENTANA DE DIALOGO INICIAL
 info = {'Participante': '001', 'Sesion': '1', 'Grupo': ['A', 'B']}
 if not gui.DlgFromDict(dictionary=info, title='Tarea Compasión').OK:
     core.quit()
@@ -77,7 +71,7 @@ if grupo not in ('A', 'B'):
     print(f"ERROR: Grupo debe ser A o B, se recibió '{grupo}'")
     core.quit()
 
-# Nombre archivo: ID_Grupo_diamesañohora.csv
+# SET DE NOMBRE:ID_Grupo_diamesañohora.csv
 timestamp_inicio = datetime.now().strftime('%d%m%Y%H%M%S')
 nombre_archivo_salida = os.path.join(
     CARPETA_SALIDA,
@@ -88,18 +82,15 @@ nombre_archivo_salida = os.path.join(
 archivo_condiciones = f'condiciones_{grupo.lower()}.xlsx'
 print(f"Grupo: {grupo} -> Archivo: {archivo_condiciones}")
 
-# ==============================================================================
-# 2. TRIGGERS: GRABACIÓN CONTINUA (2 BNC) + LSL (ANT Neuro)
-# ==============================================================================
+# 2. TRIGGERS
 # BNC: Pin 2 --> BNC 1 (Start), Pin 3 --> BNC 2 (Stop)
 # LSL: Marcadores por fase enviados al ANT Neuro vía red
 
 TRIG_START = ord('H')  # 72
 TRIG_STOP = ord('L')   # 76
 
-# ==============================================================================
+
 # 3. CONEXIÓN ARDUINO + LSL
-# ==============================================================================
 def detectar_arduino():
     puertos = serial.tools.list_ports.comports()
     for p in puertos:
@@ -172,7 +163,7 @@ def enviar_trigger(codigo):
         return core.getTime()
 
 
-# --- Inicializar stream LSL ---
+# INICIO LSL
 lsl_outlet = None
 if LSL_DISPONIBLE:
     try:
@@ -190,9 +181,7 @@ def enviar_lsl(marker):
         lsl_outlet.push_sample([marker])
 
 
-# ==============================================================================
 # 4. VENTANA Y ESTÍMULOS
-# ==============================================================================
 mon = monitors.Monitor('expMonitor')
 mon.setWidth(52)
 mon.setDistance(60)
@@ -228,9 +217,8 @@ print(f"Frames contexto: {FRAMES_CONTEXTO} ({FRAMES_CONTEXTO * FRAME_DUR:.3f}s)"
 print(f"Frames video:    {FRAMES_VIDEO} ({FRAMES_VIDEO * FRAME_DUR:.3f}s)")
 print(f"Frames rating:   {FRAMES_RATING} ({FRAMES_RATING * FRAME_DUR:.3f}s)")
 
-# ==============================================================================
 # 4b. CARGAR CONDICIONES Y SEPARAR ENTRENAMIENTO / EXPERIMENTAL
-# ==============================================================================
+
 TRIALS_POR_CONDICION = 10
 
 try:
@@ -312,9 +300,8 @@ except Exception as e:
     win.close()
     core.quit()
 
-# ==============================================================================
+
 # 4c. ESTÍMULOS VISUALES REUTILIZABLES
-# ==============================================================================
 cruz = visual.TextStim(win, text='+', color='white', height=0.1)
 texto_contexto = visual.TextStim(win, text='', color='white', height=0.07, wrapWidth=1.5)
 texto_error = visual.TextStim(win, text='Error: Video no encontrado', color='red', height=0.06)
@@ -333,10 +320,7 @@ slider_visual = visual.Slider(
     font='Arial'
 )
 
-
-# ==============================================================================
 # 5. FUNCIONES DE VIDEO Y CIERRE
-# ==============================================================================
 def precargar_video(video_path):
     """Pre-carga el video ANTES de necesitarlo."""
     if not os.path.exists(video_path):
@@ -398,7 +382,7 @@ def ejecutar_trial(trial, num_trial, fase):
     video_path = os.path.join(RUTA_FIJA, NOMBRE_CARPETA_VIDEOS, nombre_video_raw)
     condicion_str = str(trial['condicion']).strip()
 
-    # --- FASE 1: FIJACIÓN + PRECARGA VIDEO ---
+    # FASE 1: FIJACIÓN + PRECARGA VIDEO 
     enviar_lsl(LSL_FIJACION)
     cruz.draw()
     t_fijacion = win.flip()
@@ -413,7 +397,7 @@ def ejecutar_trial(trial, num_trial, fase):
             limpiar_video(mov)
             cerrar_todo(datos_guardados, nombre_archivo_salida)
 
-    # --- FASE 2: CONTEXTO (solo texto, 10s) ---
+    # FASE 2: CONTEXTO 
     enviar_lsl(LSL_CONTEXTO)
     texto_contexto.text = trial['contexto']
     texto_contexto.draw()
@@ -426,7 +410,7 @@ def ejecutar_trial(trial, num_trial, fase):
             limpiar_video(mov)
             cerrar_todo(datos_guardados, nombre_archivo_salida)
 
-    # --- FASE 3: VIDEO (10s fijos, pantalla negra si termina antes) ---
+    # FASE 3: VIDEO 
     enviar_lsl(LSL_VIDEO)
     t_video = None
     audio_ok = False
@@ -468,7 +452,7 @@ def ejecutar_trial(trial, num_trial, fase):
         core.wait(2)
         t_video_fin = core.getTime()
 
-    # --- FASE 4: RATING (1-9, flechas, 6s) ---
+    # FASE 4: RATING 
     enviar_lsl(LSL_RATING)
     valor = 5
     slider_visual.reset()
@@ -493,7 +477,7 @@ def ejecutar_trial(trial, num_trial, fase):
         slider_visual.draw()
         win.flip()
 
-    # --- REGISTRO ---
+    # REGISTRO 
     return {
         'Participante': info['Participante'],
         'Sesion': info['Sesion'],
@@ -513,17 +497,15 @@ def ejecutar_trial(trial, num_trial, fase):
         'Frame_Hz': round(fps_real, 2) if fps_real else 'NA'
     }
 
-
-# ==============================================================================
 # 6. INSTRUCCIONES, GRABACIÓN Y BUCLE PRINCIPAL
-# ==============================================================================
+
 if not MODO_SIMULACION:
     core.wait(3.0)
     if arduino:
         arduino.flushInput()
     print("Arduino estabilizado.")
 
-# --- Pantalla de configuración BNC ---
+#  Pantalla de configuración BNC 
 visual.TextStim(
     win,
     text='PASO 1: Conecta los cables BNC al Trigno.\n\n'
@@ -539,7 +521,7 @@ core.wait(1.0)
 if arduino:
     arduino.flushInput()
 
-# --- INSTRUCCIÓN 1 ---
+# INSTRUCCIÓN 1 
 visual.TextStim(
     win,
     text='En el siguiente experimento, verás vídeos que muestran situaciones '
@@ -552,7 +534,7 @@ visual.TextStim(
 win.flip()
 event.waitKeys(keyList=['space'])
 
-# --- INSTRUCCIÓN 2 ---
+# INSTRUCCIÓN 2 
 visual.TextStim(
     win,
     text='Los dos primeros ensayos servirán de entrenamiento para que te '
@@ -566,7 +548,7 @@ visual.TextStim(
 win.flip()
 event.waitKeys(keyList=['space'])
 
-# === INICIO GRABACIÓN CONTINUA ===
+# INICIO GRABACIÓN CONTINUA 
 if arduino:
     arduino.flushInput()
 t_start_grabacion = enviar_trigger(TRIG_START)
@@ -578,7 +560,7 @@ print(f"GRABACION INICIADA: {t_start_grabacion:.6f}")
 datos_guardados = []
 num_trial_global = 0
 
-# --- FASE ENTRENAMIENTO ---
+#  FASE ENTRENAMIENTO 
 for i, trial in enumerate(trials_entrenamiento):
     num_trial_global += 1
     datos_trial = ejecutar_trial(trial, num_trial_global, 'entrenamiento')
@@ -591,7 +573,7 @@ for i, trial in enumerate(trials_entrenamiento):
             pass
     print(f"Entrenamiento {i+1}/{len(trials_entrenamiento)} OK: {trial['nombre_video']}")
 
-# --- INSTRUCCIÓN 3 (post-entrenamiento) ---
+# INSTRUCCIÓN 3 
 visual.TextStim(
     win,
     text='¡El entrenamiento ha terminado!\n\n'
@@ -601,7 +583,7 @@ visual.TextStim(
 win.flip()
 event.waitKeys(keyList=['space'])
 
-# --- FASE EXPERIMENTAL ---
+# FASE EXPERIMENTAL
 for i, trial in enumerate(trials_experimentales):
     num_trial_global += 1
     datos_trial = ejecutar_trial(trial, num_trial_global, 'experimental')
@@ -614,9 +596,7 @@ for i, trial in enumerate(trials_experimentales):
             pass
     print(f"Trial {i+1}/{len(trials_experimentales)} OK: {trial['nombre_video']}")
 
-# ==============================================================================
 # 7. STOP GRABACIÓN Y GUARDAR
-# ==============================================================================
 t_stop_grabacion = enviar_trigger(TRIG_STOP)
 core.wait(0.1)
 if arduino:
@@ -642,7 +622,7 @@ else:
 print(f"Archivo: {nombre_archivo_salida}")
 print(f"{'='*50}\n")
 
-# --- INSTRUCCIÓN 4 (pantalla final) ---
+# INSTRUCCIÓN 4 
 visual.TextStim(
     win,
     text='Gracias por participar y colaborar con la ciencia.',
