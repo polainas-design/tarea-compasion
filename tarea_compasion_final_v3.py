@@ -1,8 +1,3 @@
-import sys, io
-if hasattr(sys.stdout, 'buffer'):  
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='ascii', errors='replace')
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='ascii', errors='replace')
-
 from psychopy import prefs
 prefs.hardware['audioLib'] = ['PTB']
 prefs.hardware['audioLatencyMode'] = 3  # Modo de baja latencia
@@ -12,16 +7,9 @@ from psychopy import visual, core, event, gui, logging, monitors
 import os
 import gc
 import serial
-import serial.tools.list_ports
 from datetime import datetime
 
-# para ANT - NEURO
-try:
-    from pylsl import StreamInfo, StreamOutlet
-    LSL_DISPONIBLE = True
-except ImportError:
-    print("AVISO: pylsl no instalado. Marcadores LSL desactivados.")
-    LSL_DISPONIBLE = False
+# pylsl se importa más abajo, después de la ventana de diálogo
 
 # CONFIGURACIÓN
 RUTA_FIJA = r'C:\Users\p_ull\OneDrive\Documentos\all_data_tarea_experimento\experimento_UMCE'
@@ -37,9 +25,6 @@ TIEMPO_RATING = 6.0
 # SIZE VIDEO
 VIDEO_SIZE = (960, 720)
 
-# ENTRENAMIENTO
-TRIALS_ENTRENAMIENTO = 2
-
 # --- MARCADORES LSL (ANT Neuro EEG) ---
 LSL_FIJACION = 1
 LSL_CONTEXTO = 2
@@ -48,7 +33,6 @@ LSL_RATING = 4
 
 # ARDUINO
 ARDUINO_BAUDRATE = 115200
-ARDUINO_PORT = None  # None = autodetectar
 
 # PSYCHOPY
 logging.console.setLevel(logging.WARNING)
@@ -62,7 +46,14 @@ except FileNotFoundError:
 os.makedirs(CARPETA_SALIDA, exist_ok=True)
 
 # VENTANA DE DIALOGO INICIAL
-info = {'Participante': '001', 'Sesion': '1', 'Grupo': ['A', 'B']}
+info = {
+    'Participante': '001',
+    'Sesion': '1',
+    'Grupo': ['A', 'B'],
+    'Puerto_Arduino': 'COM5',
+    'Modo_Simulacion': False,
+    'Usar_LSL': True
+}
 if not gui.DlgFromDict(dictionary=info, title='Tarea Compasión').OK:
     core.quit()
 
@@ -70,6 +61,15 @@ grupo = info['Grupo'].upper().strip()
 if grupo not in ('A', 'B'):
     print(f"ERROR: Grupo debe ser A o B, se recibió '{grupo}'")
     core.quit()
+
+MODO_SIMULACION = info['Modo_Simulacion']
+USAR_LSL = info['Usar_LSL']
+ARDUINO_PORT = info['Puerto_Arduino'].strip()
+
+# Importar pylsl si se activó LSL
+if USAR_LSL:
+    from pylsl import StreamInfo, StreamOutlet
+    print("pylsl importado correctamente.")
 
 # SET DE NOMBRE:ID_Grupo_diamesañohora.csv
 timestamp_inicio = datetime.now().strftime('%d%m%Y%H%M%S')
@@ -91,32 +91,11 @@ TRIG_STOP = ord('L')   # 76
 
 
 # 3. CONEXIÓN ARDUINO + LSL
-def detectar_arduino():
-    puertos = serial.tools.list_ports.comports()
-    for p in puertos:
-        desc = (p.description or '').lower()
-        mfr = (p.manufacturer or '').lower()
-        if any(kw in desc for kw in ['arduino', 'ch340', 'usb-serial', 'usb serial']):
-            return p.device
-        if any(kw in mfr for kw in ['arduino', 'wch']):
-            return p.device
-    return None
-
-
 def conectar_arduino():
-    puerto = ARDUINO_PORT or detectar_arduino()
-    if puerto is None:
-        print("=" * 50)
-        print("AVISO: No se detecto Arduino.")
-        for p in serial.tools.list_ports.comports():
-            print(f"  {p.device} - {p.description}")
-        print("MODO SIMULACION activo (Arduino)")
-        print("=" * 50)
-        return None
-
+    """Conecta al Arduino en el puerto especificado."""
     try:
         ard = serial.Serial(
-            port=puerto,
+            port=ARDUINO_PORT,
             baudrate=ARDUINO_BAUDRATE,
             timeout=2,
             write_timeout=1
@@ -133,21 +112,25 @@ def conectar_arduino():
             if ard.in_waiting > 0:
                 linea = ard.readline().decode('utf-8', errors='ignore').strip()
                 if 'READY' in linea:
-                    print(f"Arduino conectado en {puerto}")
+                    print(f"Arduino conectado en {ARDUINO_PORT}")
                     return ard
             intentos += 1
             core.wait(0.1)
 
-        print(f"Arduino conectado en {puerto} (sin READY, puerto activo)")
+        print(f"Arduino conectado en {ARDUINO_PORT} (sin READY, puerto activo)")
         return ard
 
     except Exception as e:
-        print(f"ERROR Arduino: {e}")
-        return None
+        print(f"ERROR Arduino en {ARDUINO_PORT}: {e}")
+        print("Verifica el puerto en la ventana de configuración.")
+        core.quit()
 
 
-arduino = conectar_arduino()
-MODO_SIMULACION = (arduino is None)
+if not MODO_SIMULACION:
+    arduino = conectar_arduino()
+else:
+    arduino = None
+    print("MODO SIMULACION activo: Arduino desactivado.")
 
 
 def enviar_trigger(codigo):
@@ -165,14 +148,12 @@ def enviar_trigger(codigo):
 
 # INICIO LSL
 lsl_outlet = None
-if LSL_DISPONIBLE:
-    try:
-        lsl_info = StreamInfo('CompasionTask', 'Markers', 1, 0, 'int32', 'compasion_markers')
-        lsl_outlet = StreamOutlet(lsl_info)
-        print("LSL stream 'CompasionTask' creado.")
-    except Exception as e:
-        print(f"AVISO: No se pudo crear stream LSL: {e}")
-        lsl_outlet = None
+if USAR_LSL:
+    lsl_info = StreamInfo('CompasionTask', 'Markers', 1, 0, 'int32', 'compasion_markers')
+    lsl_outlet = StreamOutlet(lsl_info)
+    print("LSL stream 'CompasionTask' creado.")
+else:
+    print("LSL desactivado.")
 
 
 def enviar_lsl(marker):
@@ -192,7 +173,7 @@ win = visual.Window(
     size=[1920, 1200],
     monitor='expMonitor',
     fullscr=True,
-    color=[0, 0, 0],
+    color=[-1, -1, -1],
     units='norm',
     waitBlanking=True,
     allowGUI=False
@@ -219,13 +200,10 @@ print(f"Frames rating:   {FRAMES_RATING} ({FRAMES_RATING * FRAME_DUR:.3f}s)")
 
 # 4b. CARGAR CONDICIONES Y SEPARAR ENTRENAMIENTO / EXPERIMENTAL
 
-TRIALS_POR_CONDICION = 10
-
 try:
     df = pd.read_excel(archivo_condiciones)
 
     # --- Normalizar nombres de columnas ---
-    # Acepta variantes con/sin tilde, mayúsculas/minúsculas
     col_map = {}
     for col in df.columns:
         col_limpio = col.strip().lower()
@@ -254,44 +232,13 @@ try:
     df_entrenamiento = df[df['tipo'] == 'entrenamiento'].copy()
     df_experimental = df[df['tipo'] != 'entrenamiento'].copy()
 
-    # --- Entrenamiento: exactamente 2 trials con videos únicos ---
-    df_entrenamiento = df_entrenamiento.drop_duplicates(subset=['nombre_video'])
-    if len(df_entrenamiento) > TRIALS_ENTRENAMIENTO:
-        df_entrenamiento = df_entrenamiento.sample(n=TRIALS_ENTRENAMIENTO)
-    elif len(df_entrenamiento) < TRIALS_ENTRENAMIENTO:
-        print(f"AVISO: Solo hay {len(df_entrenamiento)} videos de entrenamiento "
-              f"unicos, se necesitan {TRIALS_ENTRENAMIENTO}.")
-    df_entrenamiento = df_entrenamiento.sample(frac=1).reset_index(drop=True)
-    trials_entrenamiento = df_entrenamiento.to_dict('records')
+    # Entrenamiento: aleatorizar orden
+    trials_entrenamiento = df_entrenamiento.sample(frac=1).reset_index(drop=True).to_dict('records')
     print(f"Trials de entrenamiento: {len(trials_entrenamiento)}")
 
-    # --- Aleatorizar dentro de cada condición y luego mezclar ---
-    condiciones_unicas = df_experimental['condicion'].str.strip().unique()
-    print(f"Condiciones experimentales: {list(condiciones_unicas)}")
-
-    trials_balanceados = []
-    for cond in condiciones_unicas:
-        df_cond = df_experimental[df_experimental['condicion'].str.strip() == cond].copy()
-        df_cond = df_cond.drop_duplicates(subset=['nombre_video'])
-        disponibles = len(df_cond)
-        if disponibles < TRIALS_POR_CONDICION:
-            print(f"AVISO: Condicion '{cond}' tiene {disponibles} videos "
-                  f"unicos, se necesitan {TRIALS_POR_CONDICION}.")
-            seleccion = df_cond
-        else:
-            seleccion = df_cond.sample(n=TRIALS_POR_CONDICION)
-        # Aleatorizar dentro de la condición
-        seleccion = seleccion.sample(frac=1).reset_index(drop=True)
-        trials_balanceados.append(seleccion)
-        print(f"  {cond}: {len(seleccion)} trials seleccionados")
-
-    df_final = pd.concat(trials_balanceados, ignore_index=True)
-    df_final = df_final.sample(frac=1).reset_index(drop=True)
-    trials_experimentales = df_final.to_dict('records')
-    total_exp = len(trials_experimentales)
-
-    print(f"Total experimentales: {total_exp} "
-          f"({TRIALS_POR_CONDICION} por condicion, orden aleatorio).")
+    # Experimental: aleatorizar orden
+    trials_experimentales = df_experimental.sample(frac=1).reset_index(drop=True).to_dict('records')
+    print(f"Trials experimentales: {len(trials_experimentales)}")
 
 except Exception as e:
     print(f"Error leyendo Excel: {e}")
@@ -510,8 +457,9 @@ visual.TextStim(
     win,
     text='PASO 1: Conecta los cables BNC al Trigno.\n\n'
          'PASO 2: Configura Start/Stop trigger en Trigno Discover\n'
-         'y presiona GRABAR.\n\n'
-         'PASO 3: Presiona ESPACIO cuando esté listo.',
+         'y presiona GRABAR.'
+         '\n\n\n\n\n'
+         'Presiona la barra espaciadora cuando esté listo.',
     color='white', height=0.06, wrapWidth=1.5
 ).draw()
 win.flip()
@@ -527,8 +475,9 @@ visual.TextStim(
     text='En el siguiente experimento, verás vídeos que muestran situaciones '
          'de la vida real. Cada vídeo irá precedido de un mensaje (que podrás '
          'leer en la pantalla) describiendo el contexto en el que se grabó. '
-         'Después de cada vídeo, se te pedirá que respondas algunas preguntas.\n\n'
-         'PULSA LA BARRA ESPACIADORA PARA CONTINUAR',
+         'Después de cada vídeo, se te pedirá que respondas algunas preguntas.'
+         '\n\n\n\n\n'
+         'Pulsa la barra espaciadora para continuar.',
     color='white', height=0.06, wrapWidth=1.5
 ).draw()
 win.flip()
@@ -541,8 +490,9 @@ visual.TextStim(
          'familiarices con la estructura de cada ensayo y las preguntas. '
          'Para responder las preguntas, puedes seleccionar un número en una '
          'escala visual usando las flechas del teclado. '
-         'Recuerda: ¡no hay respuestas correctas ni incorrectas!\n\n'
-         'PULSA LA BARRA ESPACIADORA CUANDO ESTÉS LISTA/O',
+         'Recuerda: ¡no hay respuestas correctas ni incorrectas!'
+         '\n\n\n\n\n'
+         'Pulsa la barra espaciadora cuando estés lista/o.',
     color='white', height=0.06, wrapWidth=1.5
 ).draw()
 win.flip()
@@ -576,8 +526,9 @@ for i, trial in enumerate(trials_entrenamiento):
 # INSTRUCCIÓN 3 
 visual.TextStim(
     win,
-    text='¡El entrenamiento ha terminado!\n\n'
-         'PULSA LA BARRA ESPACIADORA PARA INICIAR EL EXPERIMENTO',
+    text='¡El entrenamiento ha terminado!'
+         '\n\n\n\n\n'
+         'Pulsa la barra espaciadora para iniciar el experimento.',
     color='white', height=0.06, wrapWidth=1.5
 ).draw()
 win.flip()
